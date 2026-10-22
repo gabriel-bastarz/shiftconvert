@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ShiftConvert",
+  "version": "0.1.0",
+  "identifier": "com.shiftconvert.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "ShiftConvert",
+        "width": 500,
+        "height": 360,
+        "resizable": false,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": true,
+        "dragDropEnabled": false,
+        "backgroundColor": "#00000000",
+        "shadow": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://localhost:*;"
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

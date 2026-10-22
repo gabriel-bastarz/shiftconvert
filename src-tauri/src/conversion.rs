@@ -9,7 +9,7 @@ use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
-use crate::engines::{compression, image as image_engine, text, video};
+use crate::engines::{compression, document, image as image_engine, text, video};
 use crate::file_info::{self, canonical_extension, output_extension, TargetFormat};
 
 // ---------------------------------------------------------------------------
@@ -362,6 +362,11 @@ pub fn execute_job(job: &PreparedJob, cancel: &AtomicBool) -> Result<PathBuf, Fa
             &job.target.id,
             &job.temp,
         ),
+        "document" => document::convert(
+            job.source.to_string_lossy().as_ref(),
+            &job.target.id,
+            &job.temp,
+        ),
         "video" => video::convert(
             job.source.to_string_lossy().as_ref(),
             &job.target.id,
@@ -577,6 +582,34 @@ mod tests {
         let html = fs::read_to_string(&output).expect("ler html");
         assert!(html.contains("ShiftConvert"));
         assert!(html.contains("&amp;"));
+        assert_eq!(fs::read(&source).unwrap(), before, "origem foi alterada");
+        assert!(!job.temp.exists());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn prepares_and_executes_real_document_conversion_without_touching_source() {
+        let dir = scratch_dir("document");
+        let source = dir.join("documento.docx");
+        document::write_test_docx(&source).expect("gerar docx de teste");
+        let before = fs::read(&source).unwrap();
+
+        let request = ConversionRequest {
+            source_path: source.to_string_lossy().to_string(),
+            target_format: "txt".to_string(),
+        };
+        let job = prepare_job(&request, "test-document").expect("preparar");
+        assert_eq!(job.target.id, "txt");
+        assert_eq!(job.target.kind, "document");
+        assert_eq!(job.output.extension().unwrap(), "txt");
+        assert_eq!(job.temp.extension().unwrap(), "txt");
+
+        let cancel = AtomicBool::new(false);
+        let output = execute_job(&job, &cancel).expect("converter documento");
+        let text = fs::read_to_string(&output).expect("ler txt");
+        assert!(text.contains("Documento de teste"));
+        assert!(text.contains("Segunda linha do documento."));
         assert_eq!(fs::read(&source).unwrap(), before, "origem foi alterada");
         assert!(!job.temp.exists());
 

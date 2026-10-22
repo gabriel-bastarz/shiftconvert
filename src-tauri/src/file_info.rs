@@ -56,7 +56,7 @@ pub struct TargetFormat {
     pub extension: String,
     /// Descrição curta para leitores de tela e para o rodapé.
     pub description: String,
-    /// "image", "text", "video" ou "archive".
+    /// "image", "text", "document", "video" ou "archive".
     pub kind: String,
 }
 
@@ -180,10 +180,11 @@ pub fn inspect_file(path: &str) -> Result<FileInfo, String> {
 ///
 /// - Imagens decodificáveis pelo crate `image`: JPG, PNG, WEBP, BMP, GIF e TIFF.
 /// - Texto: TXT, Markdown e HTML entre si, conforme o formato de origem.
+/// - Documentos: DOCX e PDF, com conversão textual entre TXT, HTML e o outro formato.
 /// - Vídeo: MP4, WEBM, MKV e GIF por FFmpeg.
 /// - Qualquer arquivo (exceto ZIP): compactação ZIP real.
 /// - O formato de origem é omitido; não há conversão "para o mesmo formato".
-/// - PDF, DOCX, áudio e outros formatos sem engine real não entram na lista.
+/// - Formatos sem engine real (DOC, ODT, áudio etc.) não entram na lista.
 pub fn supported_targets(path: &Path) -> Vec<TargetFormat> {
     let source_extension = extension_of(path);
     let canonical_source = canonical_extension(&source_extension).to_string();
@@ -194,6 +195,7 @@ pub fn supported_targets(path: &Path) -> Vec<TargetFormat> {
             "jpg" | "png" | "gif" | "bmp" | "webp" | "tiff" | "ico"
         );
     let decode_as_text = matches!(canonical_source.as_str(), "txt" | "md" | "html");
+    let decode_as_document = matches!(canonical_source.as_str(), "docx" | "pdf");
     let decode_as_video =
         source_category == FileCategory::Video && crate::engines::video::is_available();
 
@@ -251,6 +253,35 @@ pub fn supported_targets(path: &Path) -> Vec<TargetFormat> {
         }
     }
 
+    if decode_as_document {
+        let document_targets: &[(&str, &str, &str)] = match canonical_source.as_str() {
+            "docx" => &[
+                ("pdf", "PDF", "PDF de texto (sem layout original)"),
+                ("html", "HTML", "HTML com o conteúdo do documento"),
+                ("txt", "TXT", "Texto simples"),
+            ],
+            "pdf" => &[
+                ("docx", "DOCX", "Documento Word editável (texto)"),
+                ("html", "HTML", "HTML com o texto extraído"),
+                ("txt", "TXT", "Texto extraído"),
+            ],
+            _ => &[],
+        };
+
+        for (id, label, description) in document_targets {
+            if *id == canonical_source {
+                continue;
+            }
+            targets.push(TargetFormat {
+                id: id.to_string(),
+                label: label.to_string(),
+                extension: id.to_string(),
+                description: description.to_string(),
+                kind: "document".to_string(),
+            });
+        }
+    }
+
     if decode_as_video {
         let video_targets = [
             ("mp4", "MP4", "Vídeo H.264 + AAC"),
@@ -299,6 +330,8 @@ pub fn output_extension(target_id: &str) -> Option<&'static str> {
         "txt" => Some("txt"),
         "md" => Some("md"),
         "html" => Some("html"),
+        "docx" => Some("docx"),
+        "pdf" => Some("pdf"),
         "mp4" => Some("mp4"),
         "webm" => Some("webm"),
         "mkv" => Some("mkv"),
@@ -342,6 +375,26 @@ mod tests {
         let targets = supported_targets(Path::new("C:/notas/pagina.html"));
         let ids: Vec<&str> = targets.iter().map(|target| target.id.as_str()).collect();
         assert_eq!(ids, ["txt", "zip"]);
+    }
+
+    #[test]
+    fn docx_offers_pdf_html_txt_and_zip() {
+        let targets = supported_targets(Path::new("C:/docs/relatorio.docx"));
+        let ids: Vec<&str> = targets.iter().map(|target| target.id.as_str()).collect();
+        assert_eq!(ids, ["pdf", "html", "txt", "zip"]);
+        assert!(targets
+            .iter()
+            .all(|target| target.id == "zip" || target.kind == "document"));
+    }
+
+    #[test]
+    fn pdf_offers_docx_html_txt_and_zip() {
+        let targets = supported_targets(Path::new("C:/docs/relatorio.pdf"));
+        let ids: Vec<&str> = targets.iter().map(|target| target.id.as_str()).collect();
+        assert_eq!(ids, ["docx", "html", "txt", "zip"]);
+        assert!(targets
+            .iter()
+            .all(|target| target.id == "zip" || target.kind == "document"));
     }
 
     #[test]

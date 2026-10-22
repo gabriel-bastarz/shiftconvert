@@ -14,7 +14,8 @@ O arquivo original **nunca é movido, alterado ou apagado**. A conversão é sal
   - Imagens (`jpg`, `png`, `gif`, `bmp`, `webp`, `tiff`, `ico`): os demais formatos de imagem + `ZIP`.
   - Texto: `TXT` → `MD`/`HTML`; `MD` → `TXT`/`HTML`; `HTML` → `TXT`; sempre + `ZIP`.
   - Vídeo (`mp4`, `mkv`, `webm`, `avi`, `mov`, `wmv`, `flv`, `m4v`, `mpg`, `mpeg`): `MP4`, `WEBM`, `MKV`, `GIF` (exceto o mesmo formato) + `ZIP`, via FFmpeg.
-  - PDF, DOCX, áudio e outros formatos sem engine real: apenas `ZIP`.
+  - Documentos: `DOCX` → `PDF`/`HTML`/`TXT`; `PDF` → `DOCX`/`HTML`/`TXT` (conversão textual, sem OCR).
+  - DOC, ODT, RTF, planilhas, áudio e outros formatos sem engine real: apenas `ZIP`.
   - Arquivos `ZIP` não oferecem formatos (extração não implementada).
 - **Salva ao lado da origem** (`foto.png` → `foto.jpg`, `foto (1).jpg` se já existir).
 - **Progresso discreto** em um HUD com “Abrir pasta” e “Fechar”; erros aparecem sem interromper o app.
@@ -32,10 +33,12 @@ O arquivo original **nunca é movido, alterado ou apagado**. A conversão é sal
 | MD/Markdown | TXT, HTML + ZIP |
 | HTML/HTM | TXT + ZIP |
 | MP4, MKV, WEBM, AVI, MOV, WMV, FLV, M4V, MPG/MPEG | MP4, WEBM, MKV, GIF (exceto o mesmo formato) + ZIP |
-| PDF, DOCX, CSV, JSON, XML, MP3, etc. | ZIP |
+| DOCX | PDF, HTML, TXT + ZIP |
+| PDF | DOCX, HTML, TXT + ZIP |
+| DOC, ODT, RTF, CSV, JSON, XML, MP3, etc. | ZIP |
 | ZIP | nenhum (extração não implementada) |
 
-> Áudio e documentos binários **não** são simulados. O vídeo usa o FFmpeg instalado no sistema; os destinos de vídeo só aparecem na roda quando o FFmpeg está disponível.
+> A conversão de DOCX/PDF é **textual**: o layout original, imagens e formatação complexa não são preservados. PDFs digitalizados precisam de OCR, que não está incluído. O vídeo usa o FFmpeg instalado no sistema; os destinos de vídeo só aparecem na roda quando o FFmpeg está disponível.
 
 ---
 
@@ -51,6 +54,7 @@ src-tauri/src/
 └── engines/
     ├── image.rs        # conversão real de imagens (crate image)
     ├── text.rs         # TXT/Markdown/HTML (pulldown-cmark + html2text)
+    ├── document.rs     # DOCX/PDF: OOXML, extração de texto e PDF/DOCX de saída
     ├── video.rs        # MP4/WEBM/MKV/GIF via FFmpeg, cancelável
     └── compression.rs  # ZIP real e cancelável
 src/
@@ -147,7 +151,8 @@ O hit-test do Rust e as áreas clicáveis do SVG precisam continuar iguais: ambo
 ## Limitações conhecidas
 
 - A roda é **opaca**: não usa transparência, refração ou blur do desktop atrás dela; apenas a janela ao redor do disco é transparente.
-- Texto limitado a TXT, Markdown e HTML; PDF, DOCX, ODT e planilhas ainda não têm engine.
+- Texto e documentos: TXT, Markdown e HTML entre si; DOCX e PDF são convertidos apenas como texto, sem preservar layout, imagens ou formatação complexa.
+- PDFs digitalizados (imagem) não são convertidos porque não há OCR.
 - Vídeo exige FFmpeg; sem ele a roda oferece apenas ZIP para arquivos de vídeo.
 - **Sem extração de ZIP** e sem conversão de áudio.
 - GIF de saída é sempre a imagem estática do primeiro quadro; GIF de vídeo é animado.

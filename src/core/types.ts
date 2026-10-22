@@ -19,7 +19,7 @@ export interface TargetFormat {
   label: string;
   extension: string;
   description: string;
-  kind: "image" | "text" | "video" | "archive" | string;
+  kind: "image" | "text" | "document" | "video" | "archive" | string;
 }
 
 export interface WheelLayout {

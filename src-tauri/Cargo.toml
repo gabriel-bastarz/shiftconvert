@@ -2,7 +2,7 @@
 name = "shiftconvert"
 version = "0.1.0"
 edition = "2021"
-description = "ShiftConvert - Conversor de arquivos com roda Liquid Glass para Windows"
+description = "ShiftConvert - Conversor de arquivos com roda radial Orbit Minimal para Windows"
 
 [dependencies]
 tauri = { version = "2", features = ["common-controls-v6", "tray-icon", "image-png"] }
@@ -17,6 +17,8 @@ rfd = "0.15"
 base64 = "0.22"
 html2text = "0.17"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+pdf-extract = "0.12"
+quick-xml = "0.42"
 
 [target.'cfg(windows)'.dependencies]
 windows-core = "0.62"

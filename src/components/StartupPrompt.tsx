@@ -56,7 +56,7 @@ export function StartupPrompt({ message, onPick, onClose }: StartupPromptProps) 
         </div>
 
         <footer className="prompt-footer">
-          <span>Imagens, texto, vídeo e ZIP</span>
+          <span>Imagens, texto, documentos, vídeo e ZIP</span>
           <span className="prompt-footer-dot" aria-hidden="true" />
           <span>Esc para fechar</span>
         </footer>

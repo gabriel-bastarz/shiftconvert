@@ -166,7 +166,7 @@ fn html_to_text(html_source: &str) -> Result<String, BoxError> {
     Ok(format!("{trimmed}\n"))
 }
 
-fn wrap_html(body: &str, title: &str) -> String {
+pub(crate) fn wrap_html(body: &str, title: &str) -> String {
     format!(
         "<!doctype html>\n\
          <html lang=\"pt-BR\">\n\
@@ -188,7 +188,7 @@ fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
-fn escape_html(value: &str) -> String {
+pub(crate) fn escape_html(value: &str) -> String {
     let mut output = String::with_capacity(value.len());
     for character in value.chars() {
         match character {

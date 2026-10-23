@@ -21,17 +21,15 @@
   <p>
     <a href="https://github.com/gabriel-bastarz/shiftconvert/releases/latest">Download</a>
     ·
-    <a href="#pt-br">Português</a>
+    <a href="#português">Português</a>
     ·
-    <a href="#en">English</a>
+    <a href="#english">English</a>
     ·
     <a href="docs/WINDOWS_SHIFT_DRAG.md">Documentação técnica</a>
   </p>
 </div>
 
 ---
-
-<a id="pt-br"></a>
 
 ## Português
 
@@ -172,8 +170,6 @@ npm run build
 - Processos externos recebem argumentos separados, sem interpolação de shell.
 
 ---
-
-<a id="en"></a>
 
 ## English
 

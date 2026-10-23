@@ -19,7 +19,7 @@ html2text = "0.17"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 pdf-extract = "0.12"
 quick-xml = "0.42"
-tauri-plugin-autostart = "2"
+windows-registry = "0.6"
 
 [target.'cfg(windows)'.dependencies]
 windows-core = "0.62"

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod conversion;
 mod drag;
 mod engines;
@@ -9,12 +10,11 @@ mod screen;
 
 use std::path::PathBuf;
 
-use log::{error, info, warn};
+use log::{error, info};
 use serde::Serialize;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{command, AppHandle, Emitter, Manager};
-use tauri_plugin_autostart::ManagerExt;
 
 use conversion::ConversionRequest;
 use drag::{HudInfo, PickerResponse};
@@ -123,20 +123,12 @@ fn emit_show_prompt(app: &AppHandle) {
     }
 }
 
-fn toggle_autostart<R: tauri::Runtime>(app: &AppHandle<R>, item: &CheckMenuItem<R>) {
-    let manager = app.autolaunch();
-    let enabled = match manager.is_enabled() {
-        Ok(enabled) => enabled,
-        Err(error) => {
-            warn!("Não foi possível consultar a inicialização automática: {error}");
-            false
-        }
-    };
-
+fn toggle_autostart<R: tauri::Runtime>(item: &CheckMenuItem<R>) {
+    let enabled = autostart::is_enabled();
     let result = if enabled {
-        manager.disable()
+        autostart::disable()
     } else {
-        manager.enable()
+        autostart::enable()
     };
 
     match result {
@@ -149,7 +141,7 @@ fn toggle_autostart<R: tauri::Runtime>(app: &AppHandle<R>, item: &CheckMenuItem<
         }
         Err(error) => {
             let _ = item.set_checked(enabled);
-            error!("Não foi possível alterar a inicialização automática: {error}");
+            error!("{error}");
         }
     }
 }
@@ -157,13 +149,7 @@ fn toggle_autostart<R: tauri::Runtime>(app: &AppHandle<R>, item: &CheckMenuItem<
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, "open", "Abrir ShiftConvert", true, None::<&str>)?;
     let pick_item = MenuItem::with_id(app, "pick", "Escolher arquivo…", true, None::<&str>)?;
-    let autostart_enabled = match app.autolaunch().is_enabled() {
-        Ok(enabled) => enabled,
-        Err(error) => {
-            warn!("Não foi possível consultar a inicialização automática: {error}");
-            false
-        }
-    };
+    let autostart_enabled = autostart::is_enabled();
     info!(
         "Inicialização automática: {}.",
         if autostart_enabled {
@@ -204,7 +190,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
                 emit_show_prompt(app);
                 let _ = app.emit("tray-pick", ());
             }
-            "autostart" => toggle_autostart(app, &autostart_item_for_event),
+            "autostart" => toggle_autostart(&autostart_item_for_event),
             "quit" => {
                 info!("Encerrando pelo menu da bandeja.");
                 app.exit(0);
@@ -234,11 +220,6 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     tauri::Builder::default()
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .app_name("ShiftConvert")
-                .build(),
-        )
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 if let Err(error) = window.set_decorations(false) {

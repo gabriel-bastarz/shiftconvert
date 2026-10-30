@@ -354,6 +354,13 @@ fn find_in_winget() -> Option<PathBuf> {
 
 fn find_common_install() -> Option<PathBuf> {
     let mut candidates = Vec::new();
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(dir) = current_exe.parent() {
+            candidates.push(dir.join("ffmpeg").join("ffmpeg.exe"));
+            candidates.push(dir.join("resources").join("ffmpeg").join("ffmpeg.exe"));
+            candidates.push(dir.join("ffmpeg.exe"));
+        }
+    }
     if let Some(program_files) = std::env::var_os("ProgramFiles") {
         candidates.push(
             PathBuf::from(program_files)

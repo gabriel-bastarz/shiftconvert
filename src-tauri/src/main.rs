@@ -146,6 +146,28 @@ fn toggle_autostart<R: tauri::Runtime>(item: &CheckMenuItem<R>) {
     }
 }
 
+fn configure_bundled_ffmpeg(app: &tauri::App) {
+    if std::env::var_os("SHIFTCONVERT_FFMPEG").is_some() {
+        return;
+    }
+
+    let Ok(resource_dir) = app.path().resource_dir() else {
+        return;
+    };
+    let candidates = [
+        resource_dir.join("ffmpeg").join("ffmpeg.exe"),
+        resource_dir
+            .join("resources")
+            .join("ffmpeg")
+            .join("ffmpeg.exe"),
+    ];
+
+    if let Some(path) = candidates.into_iter().find(|path| path.is_file()) {
+        info!("FFmpeg empacotado encontrado: {:?}", path);
+        std::env::set_var("SHIFTCONVERT_FFMPEG", &path);
+    }
+}
+
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, "open", "Abrir ShiftConvert", true, None::<&str>)?;
     let pick_item = MenuItem::with_id(app, "pick", "Escolher arquivo…", true, None::<&str>)?;
@@ -221,6 +243,7 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
+            configure_bundled_ffmpeg(app);
             if let Some(window) = app.get_webview_window("main") {
                 if let Err(error) = window.set_decorations(false) {
                     error!(

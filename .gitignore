@@ -20,6 +20,11 @@ target/
 src-tauri/target/
 src-tauri/gen/
 
+# FFmpeg empacotado (baixado por scripts/fetch-ffmpeg.ps1)
+src-tauri/resources/.cache/
+src-tauri/resources/ffmpeg/*
+!src-tauri/resources/ffmpeg/README.md
+
 # Local backups / scratch
 *.bak
 *_bck.tsx

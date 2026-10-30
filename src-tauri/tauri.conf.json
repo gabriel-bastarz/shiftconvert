@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ShiftConvert",
-  "version": "0.1.0",
-  "identifier": "com.shiftconvert.app",
+  "version": "0.2.0",
+  "identifier": "com.shiftconvert.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -36,13 +36,43 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "publisher": "Gabriel Bastarz",
+    "homepage": "https://github.com/gabriel-bastarz/shiftconvert",
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "resources/ffmpeg/ffmpeg.exe": "ffmpeg/ffmpeg.exe",
+      "resources/ffmpeg/LICENSE": "ffmpeg/LICENSE",
+      "resources/ffmpeg/README.txt": "ffmpeg/README.txt",
+      "resources/ffmpeg/SOURCE.txt": "ffmpeg/SOURCE.txt"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "PortugueseBR",
+          "English"
+        ],
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp",
+        "installerHooks": "installer/hooks.nsh",
+        "startMenuFolder": "ShiftConvert"
+      }
+    }
   }
 }

@@ -9,15 +9,16 @@ mod overlay;
 mod screen;
 
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use log::{error, info};
 use serde::Serialize;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{command, AppHandle, Emitter, Manager};
+use tauri::{command, AppHandle, Emitter, Manager, Wry};
 
 use conversion::ConversionRequest;
-use drag::{HudInfo, PickerResponse};
+use drag::{HudInfo, OnboardingFileInfo, PickerResponse};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,7 +31,11 @@ pub struct StartupInfo {
     pub scale: f64,
 }
 
-fn startup_info(app: &AppHandle) -> StartupInfo {
+struct TrayState {
+    autostart_item: Mutex<Option<CheckMenuItem<Wry>>>,
+}
+
+fn startup_info(app: &AppHandle, mode: &str) -> StartupInfo {
     let hwnd = overlay::hwnd_of(app).ok();
     let (area, scale) = match hwnd {
         Some(hwnd) => (
@@ -48,7 +53,7 @@ fn startup_info(app: &AppHandle) -> StartupInfo {
         ),
     };
     StartupInfo {
-        mode: "prompt".to_string(),
+        mode: mode.to_string(),
         work_x: area.x,
         work_y: area.y,
         work_width: area.width,
@@ -58,30 +63,55 @@ fn startup_info(app: &AppHandle) -> StartupInfo {
 }
 
 #[command]
-fn ui_ready(app: AppHandle) -> Result<StartupInfo, String> {
+fn ui_ready(app: AppHandle, onboarding: Option<bool>) -> Result<StartupInfo, String> {
+    if onboarding.unwrap_or(false) {
+        info!("Interface pronta; abrindo o onboarding pela primeira vez.");
+        overlay::show_onboarding(&app)?;
+        drag::set_onboarding_active(true);
+        return Ok(startup_info(&app, "onboarding"));
+    }
+
     info!("Interface pronta; exibindo o cartão inicial.");
     if let Err(error) = overlay::show_prompt(&app) {
         error!("Falha ao exibir o cartão inicial: {}", error);
         return Err(error);
     }
-    Ok(startup_info(&app))
+    drag::set_onboarding_active(false);
+    Ok(startup_info(&app, "prompt"))
 }
 
 #[command]
 fn show_prompt_cmd(app: AppHandle) -> Result<StartupInfo, String> {
     overlay::show_prompt(&app)?;
-    Ok(startup_info(&app))
+    drag::set_onboarding_active(false);
+    Ok(startup_info(&app, "prompt"))
+}
+
+#[command]
+fn show_onboarding_cmd(app: AppHandle) -> Result<StartupInfo, String> {
+    overlay::show_onboarding(&app)?;
+    drag::set_onboarding_active(true);
+    Ok(startup_info(&app, "onboarding"))
 }
 
 #[command]
 fn hide_overlay(app: AppHandle) {
     info!("hide_overlay chamado pelo frontend.");
+    drag::set_onboarding_active(false);
     drag::force_hide(&app);
 }
 
 #[command]
 fn start_conversion(app: AppHandle, request: ConversionRequest) -> Result<String, String> {
     conversion::start_conversion(app, request)
+}
+
+#[command]
+fn start_onboarding_conversion(
+    app: AppHandle,
+    request: ConversionRequest,
+) -> Result<String, String> {
+    conversion::start_onboarding_conversion(app, request)
 }
 
 #[command]
@@ -92,6 +122,35 @@ fn cancel_conversion(conversion_id: String) -> bool {
 #[command]
 async fn pick_file(app: AppHandle) -> Result<PickerResponse, String> {
     drag::pick_file(app).await
+}
+
+#[command]
+async fn pick_onboarding_file(app: AppHandle) -> Result<Option<OnboardingFileInfo>, String> {
+    drag::set_onboarding_active(true);
+    drag::pick_file_for_onboarding(app).await
+}
+
+#[command]
+fn autostart_enabled() -> bool {
+    autostart::is_enabled()
+}
+
+#[command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    if enabled {
+        autostart::enable()?;
+    } else {
+        autostart::disable()?;
+    }
+
+    let actual = autostart::is_enabled();
+    sync_autostart_item(&app, actual);
+    let _ = app.emit("autostart-changed", actual);
+    info!(
+        "Inicialização automática {}.",
+        if actual { "ativada" } else { "desativada" }
+    );
+    Ok(actual)
 }
 
 #[command]
@@ -117,13 +176,34 @@ fn reveal_output(path: String) -> Result<(), String> {
 fn emit_show_prompt(app: &AppHandle) {
     match overlay::show_prompt(app) {
         Ok(_) => {
-            let _ = app.emit("show-prompt", startup_info(app));
+            drag::set_onboarding_active(false);
+            let _ = app.emit("show-prompt", startup_info(app, "prompt"));
         }
         Err(error) => error!("Não foi possível mostrar o prompt: {}", error),
     }
 }
 
-fn toggle_autostart<R: tauri::Runtime>(item: &CheckMenuItem<R>) {
+fn emit_show_onboarding(app: &AppHandle) {
+    match overlay::show_onboarding(app) {
+        Ok(_) => {
+            drag::set_onboarding_active(true);
+            let _ = app.emit("show-onboarding", startup_info(app, "onboarding"));
+        }
+        Err(error) => error!("Não foi possível mostrar o onboarding: {}", error),
+    }
+}
+
+fn sync_autostart_item(app: &AppHandle, enabled: bool) {
+    if let Some(state) = app.try_state::<TrayState>() {
+        if let Ok(guard) = state.autostart_item.lock() {
+            if let Some(item) = guard.as_ref() {
+                let _ = item.set_checked(enabled);
+            }
+        }
+    }
+}
+
+fn toggle_autostart(app: &AppHandle, item: &CheckMenuItem<Wry>) {
     let enabled = autostart::is_enabled();
     let result = if enabled {
         autostart::disable()
@@ -133,10 +213,13 @@ fn toggle_autostart<R: tauri::Runtime>(item: &CheckMenuItem<R>) {
 
     match result {
         Ok(()) => {
-            let _ = item.set_checked(!enabled);
+            let actual = autostart::is_enabled();
+            let _ = item.set_checked(actual);
+            sync_autostart_item(app, actual);
+            let _ = app.emit("autostart-changed", actual);
             info!(
                 "Inicialização automática {}.",
-                if enabled { "desativada" } else { "ativada" }
+                if actual { "ativada" } else { "desativada" }
             );
         }
         Err(error) => {
@@ -171,6 +254,7 @@ fn configure_bundled_ffmpeg(app: &tauri::App) {
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, "open", "Abrir ShiftConvert", true, None::<&str>)?;
     let pick_item = MenuItem::with_id(app, "pick", "Escolher arquivo…", true, None::<&str>)?;
+    let howto_item = MenuItem::with_id(app, "howto", "Como usar", true, None::<&str>)?;
     let autostart_enabled = autostart::is_enabled();
     info!(
         "Inicialização automática: {}.",
@@ -195,11 +279,16 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         &[
             &open_item,
             &pick_item,
+            &howto_item,
             &autostart_item,
             &separator,
             &quit_item,
         ],
     )?;
+
+    app.manage(TrayState {
+        autostart_item: Mutex::new(Some(autostart_item.clone())),
+    });
 
     let autostart_item_for_event = autostart_item.clone();
     let mut builder = TrayIconBuilder::new()
@@ -212,7 +301,8 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
                 emit_show_prompt(app);
                 let _ = app.emit("tray-pick", ());
             }
-            "autostart" => toggle_autostart(&autostart_item_for_event),
+            "howto" => emit_show_onboarding(app),
+            "autostart" => toggle_autostart(app, &autostart_item_for_event),
             "quit" => {
                 info!("Encerrando pelo menu da bandeja.");
                 app.exit(0);
@@ -261,16 +351,22 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
+                drag::set_onboarding_active(false);
                 overlay::hide_window(window.app_handle());
             }
         })
         .invoke_handler(tauri::generate_handler![
             ui_ready,
             show_prompt_cmd,
+            show_onboarding_cmd,
             hide_overlay,
             start_conversion,
+            start_onboarding_conversion,
             cancel_conversion,
             pick_file,
+            pick_onboarding_file,
+            autostart_enabled,
+            set_autostart,
             show_hud,
             reveal_output
         ])

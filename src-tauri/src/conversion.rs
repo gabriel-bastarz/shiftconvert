@@ -37,6 +37,23 @@ pub struct ConversionProgress {
     pub error: Option<String>,
 }
 
+/// Canal de eventos da conversão. O onboarding usa um canal separado para
+/// que o HUD global não reaja a uma conversão iniciada dentro do guia.
+#[derive(Debug, Clone, Copy)]
+pub enum EventChannel {
+    Global,
+    Onboarding,
+}
+
+impl EventChannel {
+    fn event_name(self, event: &str) -> String {
+        match self {
+            Self::Global => format!("conversion-{event}"),
+            Self::Onboarding => format!("onboarding-conversion-{event}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PreparedJob {
     pub source: PathBuf,
@@ -88,9 +105,26 @@ fn next_id() -> String {
 // ---------------------------------------------------------------------------
 
 /// Inicia a conversão em uma thread separada e devolve imediatamente o id.
-/// O frontend acompanha pelos eventos `conversion-progress`, `conversion-complete`
-/// e `conversion-error`.
+/// O frontend acompanha pelos eventos `conversion-progress`,
+/// `conversion-complete` e `conversion-error`.
 pub fn start_conversion(app: AppHandle, request: ConversionRequest) -> Result<String, String> {
+    start_conversion_with_channel(app, request, EventChannel::Global)
+}
+
+/// Variante usada pelo onboarding. Os eventos usam o prefixo
+/// `onboarding-conversion-*` e não alimentam o HUD principal.
+pub fn start_onboarding_conversion(
+    app: AppHandle,
+    request: ConversionRequest,
+) -> Result<String, String> {
+    start_conversion_with_channel(app, request, EventChannel::Onboarding)
+}
+
+fn start_conversion_with_channel(
+    app: AppHandle,
+    request: ConversionRequest,
+    channel: EventChannel,
+) -> Result<String, String> {
     if request.source_path.trim().is_empty() {
         return Err("caminho de origem vazio".to_string());
     }
@@ -110,7 +144,7 @@ pub fn start_conversion(app: AppHandle, request: ConversionRequest) -> Result<St
     std::thread::Builder::new()
         .name(format!("shiftconvert-{thread_id}"))
         .spawn(move || {
-            run_conversion(&app, &thread_id, &thread_request, &cancel);
+            run_conversion(&app, &thread_id, &thread_request, &cancel, channel);
             if let Ok(mut guard) = registry().lock() {
                 guard.remove(&thread_id);
             }
@@ -163,9 +197,24 @@ fn base_progress(
     }
 }
 
-fn emit_progress(app: &AppHandle, payload: &ConversionProgress) {
-    if let Err(error) = app.emit("conversion-progress", payload) {
+fn emit_progress(
+    app: &AppHandle,
+    channel: EventChannel,
+    payload: &ConversionProgress,
+) {
+    if let Err(error) = app.emit(&channel.event_name("progress"), payload) {
         warn!("Falha ao emitir progresso: {}", error);
+    }
+}
+
+fn emit_terminal(
+    app: &AppHandle,
+    channel: EventChannel,
+    event: &str,
+    payload: &ConversionProgress,
+) {
+    if let Err(error) = app.emit(&channel.event_name(event), payload) {
+        warn!("Falha ao emitir {}: {}", event, error);
     }
 }
 
@@ -174,9 +223,11 @@ fn run_conversion(
     id: &str,
     request: &ConversionRequest,
     cancel: &AtomicBool,
+    channel: EventChannel,
 ) {
     emit_progress(
         app,
+        channel,
         &base_progress(
             id,
             request,
@@ -193,8 +244,10 @@ fn run_conversion(
         Err(failure) => {
             let message = failure.message();
             error!("Conversão {} falhou na preparação: {}", id, message);
-            let _ = app.emit(
-                "conversion-error",
+            emit_terminal(
+                app,
+                channel,
+                "error",
                 &base_progress(
                     id,
                     request,
@@ -211,6 +264,7 @@ fn run_conversion(
 
     emit_progress(
         app,
+        channel,
         &base_progress(
             id,
             request,
@@ -224,8 +278,10 @@ fn run_conversion(
 
     if cancel.load(Ordering::SeqCst) {
         cleanup(&job.temp);
-        let _ = app.emit(
-            "conversion-error",
+        emit_terminal(
+            app,
+            channel,
+            "error",
             &base_progress(
                 id,
                 request,
@@ -241,6 +297,7 @@ fn run_conversion(
 
     emit_progress(
         app,
+        channel,
         &base_progress(
             id,
             request,
@@ -256,8 +313,10 @@ fn run_conversion(
         Ok(output) => {
             let output_text = output.to_string_lossy().to_string();
             info!("Conversão {} concluída: {}", id, output_text);
-            let _ = app.emit(
-                "conversion-complete",
+            emit_terminal(
+                app,
+                channel,
+                "complete",
                 &base_progress(
                     id,
                     request,
@@ -272,8 +331,10 @@ fn run_conversion(
         Err(failure) => {
             let message = failure.message();
             warn!("Conversão {} encerrada: {}", id, message);
-            let _ = app.emit(
-                "conversion-error",
+            emit_terminal(
+                app,
+                channel,
+                "error",
                 &base_progress(
                     id,
                     request,
@@ -493,6 +554,22 @@ pub fn unique_output_path(source: &Path, extension: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn onboarding_events_use_a_separate_namespace() {
+        assert_eq!(
+            EventChannel::Global.event_name("progress"),
+            "conversion-progress"
+        );
+        assert_eq!(
+            EventChannel::Onboarding.event_name("progress"),
+            "onboarding-conversion-progress"
+        );
+        assert_eq!(
+            EventChannel::Onboarding.event_name("complete"),
+            "onboarding-conversion-complete"
+        );
+    }
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))

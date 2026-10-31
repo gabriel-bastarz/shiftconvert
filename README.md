@@ -47,6 +47,7 @@ Não há janela principal nem upload: o processamento acontece inteiramente na m
 - **Escala e múltiplos monitores** — posicionamento e tamanho usam o monitor do cursor.
 - **Funciona offline** — sem telemetria, sem upload e sem serviços externos.
 - **Alternativas de acesso** — ícone na bandeja e botão para escolher um arquivo manualmente.
+- **Guia de primeira execução** — seis etapas curtas para aprender o gesto, o Orbit e as preferências; pode ser revisto em **Como usar**.
 - **Início com o Windows** — opção no menu da bandeja, com estado marcado/desmarcado.
 - **FFmpeg incluído** — o instalador traz o FFmpeg e habilita as conversões de vídeo sem instalação separada.
 - **Cancelamento seguro** — arquivos temporários são removidos e a origem permanece intacta.
@@ -55,10 +56,11 @@ Não há janela principal nem upload: o processamento acontece inteiramente na m
 
 1. Baixe o instalador mais recente na página de [Releases](https://github.com/gabriel-bastarz/shiftconvert/releases/latest).
 2. Execute o instalador. Ele instala o ShiftConvert no perfil do usuário, cria atalhos no Menu Iniciar e na área de trabalho e inclui o FFmpeg. O WebView2 é instalado automaticamente se necessário.
-3. Abra o ShiftConvert pelo atalho. No Explorer, segure **Shift**, arraste um arquivo e passe o mouse sobre o formato desejado.
-4. Solte sobre a opção para converter. O resultado é salvo ao lado do arquivo original.
+3. Abra o ShiftConvert pelo atalho. Na primeira execução, o guia de seis etapas apresenta o gesto, o Orbit, as preferências e uma conversão real de teste. Ele não volta a aparecer sozinho.
+4. No Explorer, segure **Shift**, arraste um arquivo e passe o mouse sobre o formato desejado.
+5. Solte sobre a opção para converter. O resultado é salvo ao lado do arquivo original.
 
-O aplicativo fica na bandeja do Windows. Clique com o botão direito no ícone para abrir a interface, escolher um arquivo ou ativar **Iniciar com o Windows**.
+O aplicativo fica na bandeja do Windows. Clique com o botão direito no ícone para abrir a interface, escolher um arquivo, rever o guia em **Como usar** ou ativar **Iniciar com o Windows**. O mesmo atalho **Como usar** fica no cartão inicial.
 
 > O instalador é por usuário e não exige administrador. Ele não é assinado digitalmente, então o Windows SmartScreen pode exibir um aviso na primeira execução. Se o WebView2 não estiver presente, o instalador usa um bootstrapper embutido e precisa de internet para baixar o runtime. Se o executável for movido depois de ativar o início automático, reative a opção no menu da bandeja.
 
@@ -109,7 +111,9 @@ src/
   components/FormatWheel.tsx
   components/StartupPrompt.tsx
   components/StatusHud.tsx
+  onboarding/        guia de primeira execução em seis etapas
   styles/orbit.css
+  styles/onboarding.css
 ```
 
 ### Desenvolvimento
@@ -173,6 +177,7 @@ npm run build
 - Se o WebView2 não estiver presente, o bootstrapper do instalador precisa de internet para baixar o runtime.
 - A detecção do gesto depende das classes de janela do Explorer; outros gerenciadores de arquivos não disparam a roda.
 - O projeto está em estágio alpha; mudanças de comportamento e formato ainda são possíveis.
+- A etapa de experimentação do guia usa o seletor nativo de arquivos para não conflitar com o detector global de **Shift + arraste**. O gesto continua disponível normalmente no Explorer.
 
 ### Privacidade e integridade
 
@@ -204,6 +209,7 @@ There is no main window and no upload: everything runs locally. The source file 
 - **DPI and multi-monitor aware** — placement and scale follow the monitor under the cursor.
 - **Fully offline** — no telemetry, uploads, or external services.
 - **Alternative access** — tray icon and a native file picker.
+- **First-run guide** — six short steps covering the gesture, Orbit, preferences, and a real test conversion; reopen it anytime from **How to use**.
 - **Launch with Windows** — option in the tray menu with a checked/unchecked state.
 - **FFmpeg included** — the installer ships FFmpeg, so video conversions work without a separate install.
 - **Safe cancellation** — temporary files are removed and the source remains untouched.
@@ -212,10 +218,11 @@ There is no main window and no upload: everything runs locally. The source file 
 
 1. Download the latest installer from [Releases](https://github.com/gabriel-bastarz/shiftconvert/releases/latest).
 2. Run the installer. It installs ShiftConvert in the user profile, creates Start Menu and desktop shortcuts, and includes FFmpeg. WebView2 is installed automatically when needed.
-3. Open ShiftConvert from the shortcut. In Explorer, hold **Shift**, drag a file, and hover over the target format.
-4. Release over the option to convert. The result is saved next to the source file.
+3. Open ShiftConvert from the shortcut. On first launch, the six-step guide introduces the gesture, Orbit, preferences, and a real test conversion. It does not appear automatically again.
+4. In Explorer, hold **Shift**, drag a file, and hover over the target format.
+5. Release over the option to convert. The result is saved next to the source file.
 
-The app lives in the Windows system tray. Right-click the icon to open the interface, pick a file, or enable **Launch with Windows**.
+The app lives in the Windows system tray. Right-click the icon to open the interface, pick a file, reopen the guide from **How to use**, or enable **Launch with Windows**. The same **How to use** shortcut is available on the startup card.
 
 > The installer is per-user and does not require administrator rights. It is not code-signed, so Windows SmartScreen may warn on first run. If WebView2 is missing, the installer uses an embedded bootstrapper and needs internet access to download the runtime. If the executable is moved after enabling launch at startup, re-enable the option in the tray menu.
 
@@ -266,7 +273,9 @@ src/
   components/FormatWheel.tsx
   components/StartupPrompt.tsx
   components/StatusHud.tsx
+  onboarding/        six-step first-run guide
   styles/orbit.css
+  styles/onboarding.css
 ```
 
 ### Development
@@ -330,6 +339,7 @@ npm run build
 - If WebView2 is missing, the installer bootstrapper needs internet access to download the runtime.
 - Drag detection depends on Explorer window classes; other file managers do not trigger the wheel.
 - The project is in alpha; behavior and formats may still change.
+- The guide's hands-on step uses the native file picker so it does not conflict with the global **Shift + drag** detector. The gesture remains available in Explorer.
 
 ### Privacy and integrity
 

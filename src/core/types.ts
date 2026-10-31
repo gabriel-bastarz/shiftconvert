@@ -96,6 +96,14 @@ export interface PickerResponse {
   message: string | null;
 }
 
+export interface OnboardingFileInfo {
+  file: FileInfo;
+  targets: TargetFormat[];
+}
+
+export type OnboardingSource = "auto" | "manual";
+export type OnboardingExitReason = "complete" | "skip" | "dismiss";
+
 export interface HudInfo {
   width: number;
   height: number;

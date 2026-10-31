@@ -139,6 +139,13 @@ pub struct HudInfo {
     pub height: f64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingFileInfo {
+    pub file: FileInfo,
+    pub targets: Vec<TargetFormat>,
+}
+
 // ---------------------------------------------------------------------------
 // Estado compartilhado
 // ---------------------------------------------------------------------------
@@ -207,6 +214,24 @@ impl DropContext {
 
 static DROP_CONTEXT: OnceLock<Arc<DropContext>> = OnceLock::new();
 static ACTIVE: AtomicBool = AtomicBool::new(false);
+static ONBOARDING_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Enquanto o onboarding está aberto, o gesto global de Shift + arrastar fica
+/// suspenso. A janela do onboarding é a mesma janela do overlay; sem esta
+/// trava, um arraste iniciado no Explorer poderia abrir a roda por cima do
+/// guia e capturar os eventos de teclado.
+pub fn set_onboarding_active(active: bool) {
+    ONBOARDING_ACTIVE.store(active, Ordering::SeqCst);
+    if active {
+        hide_shield();
+        ACTIVE.store(false, Ordering::SeqCst);
+        if let Some(context) = DROP_CONTEXT.get() {
+            context.cancelled.store(false, Ordering::SeqCst);
+            context.dropped.store(false, Ordering::SeqCst);
+            context.lock().session = None;
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Inicialização COM + janela de captura OLE
@@ -912,6 +937,18 @@ fn watch_loop(context: Arc<DropContext>) {
     loop {
         std::thread::sleep(Duration::from_millis(22));
 
+        if ONBOARDING_ACTIVE.load(Ordering::SeqCst) {
+            if armed {
+                finish_drag(&context);
+                armed = false;
+            }
+            previous_left = false;
+            moved = false;
+            candidate = false;
+            suppress_until_release = false;
+            continue;
+        }
+
         let left = key_down(VK_LBUTTON.0 as i32);
         let shift = key_down(VK_SHIFT.0 as i32);
         let escape = key_down(VK_ESCAPE.0 as i32);
@@ -1291,4 +1328,60 @@ pub async fn pick_file(app: AppHandle) -> Result<PickerResponse, String> {
         }),
         message: None,
     })
+}
+
+/// Seletor usado exclusivamente pela etapa "Try it yourself" do onboarding.
+///
+/// A janela é escondida durante o diálogo nativo para que ele não fique atrás
+/// da janela always-on-top. O estado do React permanece montado e a mesma
+/// janela do onboarding é restaurada ao final.
+pub async fn pick_file_for_onboarding(
+    app: AppHandle,
+) -> Result<Option<OnboardingFileInfo>, String> {
+    overlay::hide_window(&app);
+
+    let picked = tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_title("Escolher arquivo para experimentar")
+            .pick_file()
+    })
+    .await
+    .map_err(|error| format!("diálogo indisponível: {error}"));
+
+    let restore = || overlay::show_onboarding(&app).map(|_| ());
+
+    let picked = match picked {
+        Ok(path) => path,
+        Err(error) => {
+            restore()?;
+            return Err(error);
+        }
+    };
+
+    let Some(path) = picked else {
+        restore()?;
+        return Ok(None);
+    };
+
+    let file = match file_info::inspect_file(&path.to_string_lossy()) {
+        Ok(file) => file,
+        Err(message) => {
+            restore()?;
+            return Err(message);
+        }
+    };
+
+    if !file.is_readable {
+        restore()?;
+        return Err("Sem permissão para ler este arquivo.".to_string());
+    }
+
+    let targets = file_info::supported_targets(std::path::Path::new(&file.path));
+    if targets.is_empty() {
+        restore()?;
+        return Err("Nenhuma conversão real disponível para este arquivo.".to_string());
+    }
+
+    restore()?;
+    Ok(Some(OnboardingFileInfo { file, targets }))
 }

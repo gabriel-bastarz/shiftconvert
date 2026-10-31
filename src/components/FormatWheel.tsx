@@ -13,10 +13,6 @@ interface FormatWheelProps {
   onSelect: (target: TargetFormat) => void;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 function pointFrom(
   layout: WheelLayout,
   angle: number,
@@ -28,11 +24,8 @@ function pointFrom(
   ];
 }
 
-function seamAngle(layout: WheelLayout, index: number, t: number): number {
-  const count = Math.max(1, layout.seamBends.length);
-  const base = layout.rotation + (index * TAU) / count;
-  const bend = layout.seamBends[index] ?? 0;
-  return base + bend * Math.sin(Math.PI * t);
+function seamAngle(layout: WheelLayout, index: number): number {
+  return layout.rotation + (index * TAU) / Math.max(1, layout.seamBends.length);
 }
 
 function pathFromPoints(points: Point[]): string {
@@ -63,56 +56,10 @@ function donutPath(
 }
 
 /**
- * Suaviza um polígono fechado com Chaikin. Os arcos externo/interno são
- * amostrados com densidade suficiente para permanecerem praticamente
- * circulares; os quatro cantos de cada pétala ganham raio visível.
- */
-function smoothClosed(points: Point[], iterations = 2): Point[] {
-  let current = points;
-  for (let iteration = 0; iteration < iterations; iteration += 1) {
-    if (current.length < 3) return current;
-    const next: Point[] = [];
-    for (let index = 0; index < current.length; index += 1) {
-      const a = current[index];
-      const b = current[(index + 1) % current.length];
-      next.push([
-        a[0] * 0.75 + b[0] * 0.25,
-        a[1] * 0.75 + b[1] * 0.25,
-      ]);
-      next.push([
-        a[0] * 0.25 + b[0] * 0.75,
-        a[1] * 0.25 + b[1] * 0.75,
-      ]);
-    }
-    current = next;
-  }
-  return current;
-}
-
-function seamSidePoint(
-  layout: WheelLayout,
-  seamIndex: number,
-  radius: number,
-  side: -1 | 1,
-  gapHalf: number,
-  labelRadius: number
-): Point {
-  const t = clamp(
-    (radius - layout.innerRadius) /
-      Math.max(1, layout.outerRadius - layout.innerRadius),
-    0,
-    1
-  );
-  const angle =
-    seamAngle(layout, seamIndex, t) +
-    side * (gapHalf / Math.max(labelRadius, 1));
-  return pointFrom(layout, angle, radius);
-}
-
-/**
- * Pétala radial da Orbit Minimal. O contorno acompanha o aro externo e o
- * núcleo, enquanto as laterais acompanham as costuras orgânicas do layout.
- * O Chaikin fecha os cantos, evitando o aspecto de fatia de pizza.
+ * Pétala radial da Orbit Minimal. Cada pétala é um setor circular: arco
+ * externo, duas laterais rectas e radiais, e arco interno. O núcleo
+ * permanece um círculo perfeito e as divisórias entre pétalas são linhas
+ * retas do centro até o aro externo, sem curvatura ou ondulação.
  */
 function petalPath(
   layout: WheelLayout,
@@ -120,98 +67,49 @@ function petalPath(
   count: number,
   regionInner: number,
   regionOuter: number,
-  gapHalf: number
+  gapAngleHalf: number
 ): string {
-  const startSeam = index;
-  const endSeam = (index + 1) % count;
   const points: Point[] = [];
 
-  const outerStart = seamSidePoint(
-    layout,
-    startSeam,
-    regionOuter,
-    1,
-    gapHalf,
-    regionOuter
-  );
-  const outerEnd = seamSidePoint(
-    layout,
-    endSeam,
-    regionOuter,
-    -1,
-    gapHalf,
-    regionOuter
-  );
+  const startSeam = index;
+  const endSeam = (index + 1) % count;
 
-  let startAngle = Math.atan2(
-    outerStart[1] - layout.centerY,
-    outerStart[0] - layout.centerX
-  );
-  let endAngle = Math.atan2(
-    outerEnd[1] - layout.centerY,
-    outerEnd[0] - layout.centerX
-  );
-  while (endAngle <= startAngle) endAngle += TAU;
+  const span = TAU / count;
+  const effectiveGap = Math.min(gapAngleHalf, span * 0.49);
+  const startAngle = seamAngle(layout, startSeam) + effectiveGap;
+  const endAngle = seamAngle(layout, endSeam) - effectiveGap;
 
-  const outerSteps = 18;
+  // 1. Arco externo circular: startAngle -> endAngle (sentido anti-horário)
+  const outerSteps = 24;
   for (let step = 0; step <= outerSteps; step += 1) {
     const angle = startAngle + ((endAngle - startAngle) * step) / outerSteps;
     points.push(pointFrom(layout, angle, regionOuter));
   }
 
+  // 2. Lateral direita reta (radial): endAngle, de regionOuter até regionInner
   const sideSteps = 8;
   for (let step = 1; step <= sideSteps; step += 1) {
     const radius =
       regionOuter - ((regionOuter - regionInner) * step) / sideSteps;
-    points.push(
-      seamSidePoint(layout, endSeam, radius, -1, gapHalf, radius)
-    );
+    points.push(pointFrom(layout, endAngle, radius));
   }
 
-  const innerEnd = seamSidePoint(
-    layout,
-    endSeam,
-    regionInner,
-    -1,
-    gapHalf,
-    regionInner
-  );
-  const innerStart = seamSidePoint(
-    layout,
-    startSeam,
-    regionInner,
-    1,
-    gapHalf,
-    regionInner
-  );
-
-  let innerStartAngle = Math.atan2(
-    innerEnd[1] - layout.centerY,
-    innerEnd[0] - layout.centerX
-  );
-  let innerEndAngle = Math.atan2(
-    innerStart[1] - layout.centerY,
-    innerStart[0] - layout.centerX
-  );
-  while (innerEndAngle >= innerStartAngle) innerEndAngle -= TAU;
-
-  const innerSteps = 16;
+  // 3. Arco interno circular: endAngle -> startAngle (sentido horário)
+  const innerSteps = 20;
   for (let step = 0; step <= innerSteps; step += 1) {
     const angle =
-      innerStartAngle +
-      ((innerEndAngle - innerStartAngle) * step) / innerSteps;
+      endAngle - ((endAngle - startAngle) * step) / innerSteps;
     points.push(pointFrom(layout, angle, regionInner));
   }
 
+  // 4. Lateral esquerda reta (radial): startAngle, de regionInner até regionOuter
   for (let step = 1; step < sideSteps; step += 1) {
     const radius =
       regionInner + ((regionOuter - regionInner) * step) / sideSteps;
-    points.push(
-      seamSidePoint(layout, startSeam, radius, 1, gapHalf, radius)
-    );
+    points.push(pointFrom(layout, startAngle, radius));
   }
 
-  return pathFromPoints(smoothClosed(points, 2));
+  return pathFromPoints(points);
 }
 
 function formatFileSize(bytes: number): string {
@@ -254,6 +152,7 @@ export function FormatWheel({
       hubRadius + hubGap
     );
     const gapHalf = panelGap / 2;
+    const gapAngleHalf = gapHalf / Math.max(regionOuter, 1);
 
     const outerPath = circlePath(cx, cy, outerRadius);
     const hubPath = circlePath(cx, cy, hubRadius);
@@ -267,15 +166,15 @@ export function FormatWheel({
               count,
               regionInner,
               regionOuter,
-              gapHalf
+              gapAngleHalf
             )
           );
 
     const labels = targets.map((target, index) => {
       let angle = -Math.PI / 2;
       if (count > 1) {
-        let start = seamAngle(layout, index, 0.54);
-        let end = seamAngle(layout, (index + 1) % count, 0.54);
+        let start = seamAngle(layout, index);
+        let end = seamAngle(layout, (index + 1) % count);
         while (end <= start) end += TAU;
         angle = (start + end) / 2;
       }

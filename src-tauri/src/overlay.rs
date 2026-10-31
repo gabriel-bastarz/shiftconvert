@@ -180,3 +180,33 @@ pub fn show_prompt(app: &AppHandle) -> Result<(WorkArea, f64), String> {
     set_window_rect(app, rect, true)?;
     Ok((area, scale))
 }
+
+/// Mostra o onboarding em uma janela ampla e centralizada. O tamanho é
+/// limitado pela área útil do monitor para funcionar em 100%, 125%, 150% e
+/// resoluções menores sem cortar o conteúdo.
+pub fn show_onboarding(app: &AppHandle) -> Result<(WorkArea, f64), String> {
+    let (cursor_x, cursor_y) = screen::cursor_position();
+    let area = screen::work_area_for_point(cursor_x, cursor_y);
+    let scale = screen::dpi_scale_for_point(cursor_x, cursor_y).max(0.5);
+
+    let margin_css = 24.0;
+    let max_width_css = (area.width as f64 / scale - margin_css * 2.0).max(320.0);
+    let max_height_css = (area.height as f64 / scale - margin_css * 2.0).max(320.0);
+    let width_css = 1120.0_f64.min(max_width_css);
+    let height_css = 760.0_f64.min(max_height_css);
+    let width = (width_css * scale).round() as i32;
+    let height = (height_css * scale).round() as i32;
+    let rect = ScreenRect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+
+    debug!(
+        "show_onboarding: área {}x{}@{},{} | escala {:.3} | janela {}x{}@{},{}",
+        area.width, area.height, area.x, area.y, scale, rect.width, rect.height, rect.x, rect.y
+    );
+    set_window_rect(app, rect, true)?;
+    Ok((area, scale))
+}

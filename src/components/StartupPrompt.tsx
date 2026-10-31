@@ -2,9 +2,15 @@ interface StartupPromptProps {
   message: string | null;
   onPick: () => void;
   onClose: () => void;
+  onHowTo: () => void;
 }
 
-export function StartupPrompt({ message, onPick, onClose }: StartupPromptProps) {
+export function StartupPrompt({
+  message,
+  onPick,
+  onClose,
+  onHowTo,
+}: StartupPromptProps) {
   return (
     <div className="prompt-root">
       <section className="menu-card prompt-card" aria-label="ShiftConvert">
@@ -56,9 +62,12 @@ export function StartupPrompt({ message, onPick, onClose }: StartupPromptProps) 
         </div>
 
         <footer className="prompt-footer">
-          <span>Imagens, texto, documentos, vídeo e ZIP</span>
+          <span>Imagens, texto, documentos e ZIP</span>
           <span className="prompt-footer-dot" aria-hidden="true" />
           <span>Esc para fechar</span>
+          <button type="button" className="prompt-howto" onClick={onHowTo}>
+            Como usar
+          </button>
         </footer>
       </section>
     </div>

@@ -1,7 +1,7 @@
 {
   "name": "shiftconvert",
   "productName": "ShiftConvert",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Conversor de arquivos desktop com roda radial Orbit Minimal, ativado por Shift + arrastar no Windows",
   "private": true,
   "type": "module",

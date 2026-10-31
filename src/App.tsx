@@ -5,20 +5,36 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { FormatWheel } from "./components/FormatWheel";
 import { StartupPrompt } from "./components/StartupPrompt";
 import { StatusHud } from "./components/StatusHud";
+import { Onboarding } from "./onboarding/Onboarding";
+import {
+  hasCompletedOnboarding,
+  markOnboardingCompleted,
+} from "./onboarding/onboarding-storage";
 import type {
   ConversionProgress,
   DragMessage,
   DragOverPayload,
   DropPayload,
   HudState,
+  OnboardingExitReason,
+  OnboardingSource,
   PickerResponse,
   StartupInfo,
   ToastState,
   WheelPayload,
 } from "./core/types";
 import "./styles/orbit.css";
+import "./styles/onboarding.css";
 
-type Mode = "boot" | "prompt" | "loading" | "armed" | "wheel" | "hud" | "hidden";
+type Mode =
+  | "boot"
+  | "prompt"
+  | "loading"
+  | "armed"
+  | "wheel"
+  | "hud"
+  | "onboarding"
+  | "hidden";
 
 function fallbackFile(path: string) {
   const name = path.split(/[\\/]/).pop() ?? "arquivo";
@@ -41,8 +57,12 @@ export default function App() {
   const [hovered, setHovered] = useState<number | null>(null);
   const [hud, setHud] = useState<HudState | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [onboardingSource, setOnboardingSource] =
+    useState<OnboardingSource>("manual");
+  const [onboardingResetToken, setOnboardingResetToken] = useState(0);
 
   const modeRef = useRef(mode);
+  const onboardingSourceRef = useRef<OnboardingSource>("manual");
   const wheelRef = useRef(wheel);
   const hudRef = useRef(hud);
   const toastTimer = useRef<number | null>(null);
@@ -57,6 +77,9 @@ export default function App() {
   useEffect(() => {
     hudRef.current = hud;
   }, [hud]);
+  useEffect(() => {
+    onboardingSourceRef.current = onboardingSource;
+  }, [onboardingSource]);
 
   const showToast = useCallback((message: string, x: number, y: number, duration = 1900) => {
     const clampedX = Math.min(Math.max(x, 60), Math.max(60, window.innerWidth - 60));
@@ -171,6 +194,37 @@ export default function App() {
     setHud(null);
   }, []);
 
+  const finishOnboarding = useCallback((_reason: OnboardingExitReason) => {
+    if (onboardingSourceRef.current === "auto") {
+      markOnboardingCompleted();
+    }
+    setMessage(null);
+    setWheel(null);
+    setHovered(null);
+    setHud(null);
+    setMode("prompt");
+    void invoke<StartupInfo>("show_prompt_cmd").catch((error) => {
+      setMessage(String(error));
+    });
+  }, []);
+
+  const openOnboarding = useCallback(async (source: OnboardingSource) => {
+    setMessage(null);
+    setWheel(null);
+    setHovered(null);
+    setHud(null);
+    try {
+      await invoke<StartupInfo>("show_onboarding_cmd");
+      onboardingSourceRef.current = source;
+      setOnboardingSource(source);
+      setOnboardingResetToken((value) => value + 1);
+      setMode("onboarding");
+    } catch (error) {
+      setMessage(String(error));
+      setMode("prompt");
+    }
+  }, []);
+
   const handleReveal = useCallback(() => {
     const current = hudRef.current;
     if (!current?.outputPath) return;
@@ -182,6 +236,7 @@ export default function App() {
     const unlisteners: Array<Promise<UnlistenFn>> = [];
 
     const applyProgress = (progress: ConversionProgress) => {
+      if (modeRef.current === "onboarding") return;
       progressCache.current.set(progress.conversionId, progress);
       setHud((value) => {
         if (!value) {
@@ -219,9 +274,17 @@ export default function App() {
     };
 
     const setup = async () => {
+      const completed = hasCompletedOnboarding();
       try {
-        await invoke<StartupInfo>("ui_ready");
-        if (!disposed) setMode("prompt");
+        const info = await invoke<StartupInfo>("ui_ready", {
+          onboarding: !completed,
+        });
+        if (!disposed) {
+          const source: OnboardingSource = completed ? "manual" : "auto";
+          onboardingSourceRef.current = source;
+          setOnboardingSource(source);
+          setMode(info.mode === "onboarding" ? "onboarding" : "prompt");
+        }
       } catch (error) {
         if (!disposed) {
           setMessage(String(error));
@@ -238,6 +301,12 @@ export default function App() {
       };
 
       add<StartupInfo>("show-prompt", () => {
+        if (
+          modeRef.current === "onboarding" &&
+          onboardingSourceRef.current === "auto"
+        ) {
+          markOnboardingCompleted();
+        }
         setMessage(null);
         setWheel(null);
         setHovered(null);
@@ -245,17 +314,34 @@ export default function App() {
         setMode("prompt");
       });
 
+      add<StartupInfo>("show-onboarding", () => {
+        const keepAuto =
+          modeRef.current === "onboarding" &&
+          onboardingSourceRef.current === "auto";
+        const source: OnboardingSource = keepAuto ? "auto" : "manual";
+        onboardingSourceRef.current = source;
+        setOnboardingSource(source);
+        setOnboardingResetToken((value) => value + 1);
+        setMessage(null);
+        setWheel(null);
+        setHovered(null);
+        setHud(null);
+        setMode("onboarding");
+      });
+
       add("tray-pick", () => {
         void handlePick();
       });
 
       add("drag-armed", () => {
+        if (modeRef.current === "onboarding") return;
         setWheel(null);
         setHovered(null);
         setMode("armed");
       });
 
       add<WheelPayload>("drag-enter", (payload) => {
+        if (modeRef.current === "onboarding") return;
         setWheel(payload);
         setHovered(null);
         setHud(null);
@@ -273,10 +359,12 @@ export default function App() {
       });
 
       add<DragMessage>("drag-invalid", (payload) => {
+        if (modeRef.current === "onboarding") return;
         showToast(payload.message, payload.cursorX, payload.cursorY, 2400);
       });
 
       add<DropPayload>("drop", (payload) => {
+        if (modeRef.current === "onboarding") return;
         const progress = progressCache.current.get(payload.conversionId);
         setWheel(null);
         setHovered(null);
@@ -294,6 +382,7 @@ export default function App() {
       });
 
       add<DragMessage>("drop-invalid", (payload) => {
+        if (modeRef.current === "onboarding") return;
         showToast(payload.message, payload.cursorX, payload.cursorY, 1600);
         window.setTimeout(() => {
           void invoke("hide_overlay");
@@ -302,6 +391,7 @@ export default function App() {
       });
 
       add<DragMessage>("drop-error", (payload) => {
+        if (modeRef.current === "onboarding") return;
         showToast(payload.message, payload.cursorX, payload.cursorY, 2400);
         window.setTimeout(() => {
           void invoke("hide_overlay");
@@ -310,6 +400,7 @@ export default function App() {
       });
 
       add("drag-cancel", () => {
+        if (modeRef.current === "onboarding") return;
         setWheel(null);
         setHovered(null);
         setMode("hidden");
@@ -325,6 +416,10 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       const currentMode = modeRef.current;
+      if (currentMode === "onboarding") {
+        // O próprio onboarding trata Escape para encerrar com animação.
+        return;
+      }
       const isDragMode =
         currentMode === "armed" ||
         (currentMode === "wheel" && wheelRef.current?.mode === "drag");
@@ -354,7 +449,20 @@ export default function App() {
   return (
     <div className={`app-root mode-${mode}`}>
       {mode === "prompt" ? (
-        <StartupPrompt message={message} onPick={handlePick} onClose={handleClose} />
+        <StartupPrompt
+          message={message}
+          onPick={handlePick}
+          onClose={handleClose}
+          onHowTo={() => void openOnboarding("manual")}
+        />
+      ) : null}
+
+      {mode === "onboarding" ? (
+        <Onboarding
+          isFirstRun={onboardingSource === "auto"}
+          resetToken={onboardingResetToken}
+          onExit={finishOnboarding}
+        />
       ) : null}
 
       {mode === "loading" ? (
